@@ -1,83 +1,134 @@
 import os
+import json
 import requests
 
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from http.server import BaseHTTPRequestHandler
 
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 IMGBB_API_KEY = os.environ["IMGBB_API_KEY"]
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "╭────────────────────╮\n"
-        "│   🖼️ IMAGE TO URL   │\n"
-        "╰────────────────────╯\n\n"
-        "Send me an image and I'll convert it into a direct URL.\n\n"
-        "⚡ Fast • Simple • Personal"
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+
+def telegram_send_message(chat_id, text):
+    requests.post(
+        f"{TELEGRAM_API}/sendMessage",
+        data={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+        timeout=20,
     )
 
-    await update.message.reply_text(text)
 
+def upload_to_imgbb(file_bytes, filename):
+    response = requests.post(
+        "https://api.imgbb.com/1/upload",
+        params={
+            "key": IMGBB_API_KEY,
+        },
+        files={
+            "image": (filename, file_bytes),
+        },
+        timeout=30,
+    )
 
-async def handle_image(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-    message = update.message
-    file_path = None
-
-    try:
-        photo = message.photo[-1]
-
-        telegram_file = await context.bot.get_file(
-            photo.file_id
+    if response.status_code != 200:
+        raise Exception(
+            f"ImgBB HTTP {response.status_code}"
         )
 
-        file_path = f"/tmp/{photo.file_unique_id}.jpg"
+    data = response.json()
 
-        await telegram_file.download_to_drive(file_path)
+    if not data.get("success"):
+        raise Exception("ImgBB upload failed")
 
-        with open(file_path, "rb") as image_file:
-            response = requests.post(
-                "https://api.imgbb.com/1/upload",
-                params={
-                    "key": IMGBB_API_KEY
-                },
-                files={
-                    "image": image_file
-                },
-                timeout=30,
-            )
+    return data["data"]
 
-        if response.status_code != 200:
-            await message.reply_text(
-                "❌ Upload failed.\n\n"
-                "Please try again."
-            )
-            return
 
-        data = response.json()
+def process_update(update):
+    message = update.get("message")
 
-        if not data.get("success"):
-            await message.reply_text(
-                "❌ Image hosting failed."
-            )
-            return
+    if not message:
+        return
 
-        image_url = data["data"]["url"]
+    chat_id = message["chat"]["id"]
 
-        width = data["data"].get("width", "?")
-        height = data["data"].get("height", "?")
+    # /start
+    text = message.get("text", "")
 
-        text = (
+    if text.startswith("/start"):
+        telegram_send_message(
+            chat_id,
+            "╭────────────────────╮\n"
+            "│   🖼️ IMAGE TO URL   │\n"
+            "╰────────────────────╯\n\n"
+            "Send me an image and I'll convert it into a direct URL.\n\n"
+            "⚡ Fast • Simple • Personal",
+        )
+        return
+
+    # Image
+    photos = message.get("photo")
+
+    if not photos:
+        return
+
+    try:
+        # Highest-quality Telegram photo
+        photo = photos[-1]
+
+        file_id = photo["file_id"]
+        unique_id = photo["file_unique_id"]
+
+        # Get Telegram file information
+        file_response = requests.get(
+            f"{TELEGRAM_API}/getFile",
+            params={
+                "file_id": file_id,
+            },
+            timeout=20,
+        )
+
+        file_data = file_response.json()
+
+        if not file_data.get("ok"):
+            raise Exception("Telegram getFile failed")
+
+        telegram_path = file_data["result"]["file_path"]
+
+        # Download image from Telegram
+        download_url = (
+            f"https://api.telegram.org/file/"
+            f"bot{BOT_TOKEN}/{telegram_path}"
+        )
+
+        image_response = requests.get(
+            download_url,
+            timeout=30,
+        )
+
+        if image_response.status_code != 200:
+            raise Exception("Telegram image download failed")
+
+        # Upload to ImgBB
+        filename = f"telegram-image-{unique_id}.jpg"
+
+        image_data = upload_to_imgbb(
+            image_response.content,
+            filename,
+        )
+
+        image_url = image_data["url"]
+
+        width = photo.get("width", "?")
+        height = photo.get("height", "?")
+
+        result = (
             "╭───────────────╮\n"
             "│  ✨ IMAGE READY │\n"
             "╰───────────────╯\n\n"
@@ -89,85 +140,73 @@ async def handle_image(
             "━━━━━━━━━━━━━━━━"
         )
 
-        await message.reply_text(
-            text,
-            parse_mode="HTML"
+        telegram_send_message(
+            chat_id,
+            result,
         )
 
-    except Exception as e:
-        print("ERROR:", e)
+    except Exception as error:
+        print("ERROR:", error)
 
-        await message.reply_text(
+        telegram_send_message(
+            chat_id,
             "❌ Something went wrong.\n\n"
-            "Please send the image again."
+            "Please send the image again.",
         )
 
-    finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
 
+class handler(BaseHTTPRequestHandler):
 
-# Create the Telegram application
-application = (
-    Application.builder()
-    .token(BOT_TOKEN)
-    .build()
-)
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8",
+        )
+        self.end_headers()
 
-application.add_handler(
-    CommandHandler("start", start)
-)
-
-application.add_handler(
-    MessageHandler(
-        filters.PHOTO,
-        handle_image
-    )
-)
-
-
-async def handler(request):
-    """
-    Vercel serverless webhook handler.
-    """
-
-    if request.method == "GET":
-        return {
-            "statusCode": 200,
-            "body": "🟢 Image URL Bot is online!"
-        }
-
-    if request.method != "POST":
-        return {
-            "statusCode": 405,
-            "body": "Method Not Allowed"
-        }
-
-    try:
-        body = await request.json()
-
-        update = Update.de_json(
-            body,
-            application.bot
+        self.wfile.write(
+            b"Image URL Bot is online!"
         )
 
-        await application.initialize()
+    def do_POST(self):
+        try:
+            content_length = int(
+                self.headers.get(
+                    "Content-Length",
+                    0,
+                )
+            )
 
-        await application.process_update(
-            update
-        )
+            body = self.rfile.read(
+                content_length
+            )
 
-        await application.shutdown()
+            update = json.loads(
+                body.decode("utf-8")
+            )
 
-        return {
-            "statusCode": 200,
-            "body": "OK"
-        }
+            process_update(update)
 
-    except Exception as e:
-        print("WEBHOOK ERROR:", e)
+            self.send_response(200)
+            self.send_header(
+                "Content-Type",
+                "text/plain",
+            )
+            self.end_headers()
 
-        return {
-            "statusCode": 500,
-            "body": "Internal Server Error"
-        }
+            self.wfile.write(b"OK")
+
+        except Exception as error:
+            print("WEBHOOK ERROR:", error)
+
+            self.send_response(500)
+            self.send_header(
+                "Content-Type",
+                "text/plain",
+            )
+            self.end_headers()
+
+            self.wfile.write(
+                b"Internal Server Error"
+            )
