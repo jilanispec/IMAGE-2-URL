@@ -1,7 +1,7 @@
 import os
 import requests
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -10,141 +10,73 @@ from telegram.ext import (
     filters,
 )
 
-from config import BOT_TOKEN, IMGBB_API_KEY
 
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+IMGBB_API_KEY = os.environ["IMGBB_API_KEY"]
 
-# ─────────────────────────────────────────────
-# START
-# ─────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🖼️ Upload Image",
-                callback_data="upload"
-            )
-        ]
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     text = (
         "╭────────────────────╮\n"
         "│   🖼️ IMAGE TO URL   │\n"
         "╰────────────────────╯\n\n"
-        "Send me an image and I'll\n"
-        "convert it into a direct URL.\n\n"
+        "Send me an image and I'll convert it into a direct URL.\n\n"
         "⚡ Fast • Simple • Personal"
     )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text(text)
 
 
-# ─────────────────────────────────────────────
-# BUTTON
-# ─────────────────────────────────────────────
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "upload":
-
-        await query.message.reply_text(
-            "🖼️ Send your image now."
-        )
-
-
-# ─────────────────────────────────────────────
-# IMAGE HANDLER
-# ─────────────────────────────────────────────
-
-async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+async def handle_image(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
     message = update.message
+    file_path = None
 
     try:
-
-        # Get highest quality Telegram photo
         photo = message.photo[-1]
 
-        # Telegram file
         telegram_file = await context.bot.get_file(
             photo.file_id
         )
 
-        # Temporary filename
-        filename = (
-            f"telegram_image_"
-            f"{photo.file_unique_id}.jpg"
-        )
+        file_path = f"/tmp/{photo.file_unique_id}.jpg"
 
-        file_path = os.path.join(
-            ".",
-            filename
-        )
+        await telegram_file.download_to_drive(file_path)
 
-        # Download image
-        await telegram_file.download_to_drive(
-            file_path
-        )
-
-        # Upload to ImgBB
         with open(file_path, "rb") as image_file:
-
             response = requests.post(
                 "https://api.imgbb.com/1/upload",
-
                 params={
                     "key": IMGBB_API_KEY
                 },
-
                 files={
                     "image": image_file
                 },
-
-                timeout=60
+                timeout=30,
             )
 
-        # Delete temporary file
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-        # Check HTTP response
         if response.status_code != 200:
-
             await message.reply_text(
                 "❌ Upload failed.\n\n"
                 "Please try again."
             )
-
             return
 
         data = response.json()
 
-        # Check ImgBB result
         if not data.get("success"):
-
             await message.reply_text(
-                "❌ ImgBB rejected the image."
+                "❌ Image hosting failed."
             )
-
             return
 
-        # Get URL
         image_url = data["data"]["url"]
 
-        # Image information
         width = data["data"].get("width", "?")
         height = data["data"].get("height", "?")
 
-        # Telegram UI
         text = (
             "╭───────────────╮\n"
             "│  ✨ IMAGE READY │\n"
@@ -152,101 +84,90 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔗 Direct URL\n\n"
             f"<code>{image_url}</code>\n\n"
             "━━━━━━━━━━━━━━━━\n"
-            f"🖼️ Format: JPG\n"
+            "🖼️ Format: JPG\n"
             f"📐 Size: {width} × {height}\n"
             "━━━━━━━━━━━━━━━━"
         )
 
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🖼️ Upload Another",
-                    callback_data="upload"
-                )
-            ]
-        ]
-
-        reply_markup = InlineKeyboardMarkup(
-            keyboard
-        )
-
         await message.reply_text(
             text,
-            parse_mode="HTML",
-            reply_markup=reply_markup
+            parse_mode="HTML"
         )
 
     except Exception as e:
-
         print("ERROR:", e)
-
-        # Cleanup
-        if (
-            "file_path" in locals()
-            and os.path.exists(file_path)
-        ):
-            os.remove(file_path)
 
         await message.reply_text(
             "❌ Something went wrong.\n\n"
             "Please send the image again."
         )
 
+    finally:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
 
-# ─────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────
 
-def main():
+# Create the Telegram application
+application = (
+    Application.builder()
+    .token(BOT_TOKEN)
+    .build()
+)
 
-    print("🤖 Image URL Bot starting...")
+application.add_handler(
+    CommandHandler("start", start)
+)
 
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .build()
+application.add_handler(
+    MessageHandler(
+        filters.PHOTO,
+        handle_image
     )
+)
 
-    # /start
-    app.add_handler(
-        CommandHandler(
-            "start",
-            start
+
+async def handler(request):
+    """
+    Vercel serverless webhook handler.
+    """
+
+    if request.method == "GET":
+        return {
+            "statusCode": 200,
+            "body": "🟢 Image URL Bot is online!"
+        }
+
+    if request.method != "POST":
+        return {
+            "statusCode": 405,
+            "body": "Method Not Allowed"
+        }
+
+    try:
+        body = await request.json()
+
+        update = Update.de_json(
+            body,
+            application.bot
         )
-    )
 
-    # Buttons
-    app.add_handler(
-        MessageHandler(
-            filters.StatusUpdate.ALL,
-            lambda update, context: None
+        await application.initialize()
+
+        await application.process_update(
+            update
         )
-    )
 
-    # Image
-    app.add_handler(
-        MessageHandler(
-            filters.PHOTO,
-            handle_image
-        )
-    )
+        await application.shutdown()
 
-    # Callback buttons
-    from telegram.ext import CallbackQueryHandler
+        return {
+            "statusCode": 200,
+            "body": "OK"
+        }
 
-    app.add_handler(
-        CallbackQueryHandler(
-            button_handler
-        )
-    )
+    except Exception as e:
+        print("WEBHOOK ERROR:", e)
 
-    print("✅ Bot is running!")
-    print("📸 Send an image to test.")
-
-    app.run_polling()
-
-
-# ─────────────────────────────────────────────
-
-if __name__ == "__main__":
-    main()
+        return {
+            "statusCode": 500,
+            "body": "Internal Server Error"
+        }
