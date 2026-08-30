@@ -1,46 +1,239 @@
 import os
 import json
 import requests
-
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler
 
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 IMGBB_API_KEY = os.environ["IMGBB_API_KEY"]
+SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+ADMIN_ID = str(os.environ["ADMIN_ID"])
 
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
-def telegram_send_message(chat_id, text):
-    requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        data={
+def telegram(method, data=None):
+    response = requests.post(
+        f"{TELEGRAM_API}/{method}",
+        data=data or {},
+        timeout=30,
+    )
+    return response.json()
+
+
+def supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def supabase_get(table, params=None):
+    response = requests.get(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        headers=supabase_headers(),
+        params=params or {},
+        timeout=20,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def supabase_insert(table, data, upsert=False):
+    headers = supabase_headers()
+
+    if upsert:
+        headers["Prefer"] = "resolution=merge-duplicates"
+
+    response = requests.post(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        headers=headers,
+        json=data,
+        timeout=20,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def supabase_update(table, data, params):
+    response = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        headers=supabase_headers(),
+        params=params,
+        json=data,
+        timeout=20,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def send_message(chat_id, text):
+    telegram(
+        "sendMessage",
+        {
             "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
         },
-        timeout=20,
     )
 
 
-def upload_to_imgbb(file_bytes, filename):
+def record_user(user_id):
+    try:
+        users = supabase_get(
+            "bot_users",
+            {
+                "select": "user_id",
+                "user_id": f"eq.{user_id}",
+                "limit": "1",
+            },
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        if users:
+            supabase_update(
+                "bot_users",
+                {"last_seen": now},
+                {"user_id": f"eq.{user_id}"},
+            )
+            return False
+
+        supabase_insert(
+            "bot_users",
+            {
+                "user_id": user_id,
+                "last_seen": now,
+            },
+        )
+
+        return True
+
+    except Exception as error:
+        print("USER ERROR:", error)
+        return False
+
+
+def update_stats(upload=False, ping=False, new_user=False):
+    try:
+        rows = supabase_get(
+            "bot_stats",
+            {
+                "select": "*",
+                "id": "eq.1",
+                "limit": "1",
+            },
+        )
+
+        if not rows:
+            supabase_insert(
+                "bot_stats",
+                {
+                    "id": 1,
+                    "total_uploads": 1 if upload else 0,
+                    "unique_users": 1 if new_user else 0,
+                    "weekly_uploads": 1 if upload else 0,
+                    "pings": 1 if ping else 0,
+                },
+            )
+            return
+
+        stats = rows[0]
+
+        values = {
+            "total_uploads": int(stats.get("total_uploads", 0))
+            + (1 if upload else 0),
+
+            "unique_users": int(stats.get("unique_users", 0))
+            + (1 if new_user else 0),
+
+            "weekly_uploads": int(stats.get("weekly_uploads", 0))
+            + (1 if upload else 0),
+
+            "pings": int(stats.get("pings", 0))
+            + (1 if ping else 0),
+        }
+
+        supabase_update(
+            "bot_stats",
+            values,
+            {"id": "eq.1"},
+        )
+
+    except Exception as error:
+        print("STATS ERROR:", error)
+
+
+def bot_stats(chat_id):
+    if str(chat_id) != ADMIN_ID:
+        send_message(
+            chat_id,
+            "⛔ <b>Access Denied</b>\n\n"
+            "This command is available to the bot administrator only.",
+        )
+        return
+
+    try:
+        rows = supabase_get(
+            "bot_stats",
+            {
+                "select": "*",
+                "id": "eq.1",
+                "limit": "1",
+            },
+        )
+
+        if not rows:
+            send_message(
+                chat_id,
+                "📊 <b>BOT STATS</b>\n\n"
+                "No statistics available yet.",
+            )
+            return
+
+        stats = rows[0]
+
+        text = (
+            "╭────────────────────╮\n"
+            "│    🛠️ BOT STATS    │\n"
+            "╰────────────────────╯\n\n"
+            f"📸 Total Uploads: <b>{stats.get('total_uploads', 0)}</b>\n"
+            f"👥 Unique Users: <b>{stats.get('unique_users', 0)}</b>\n"
+            f"📅 This Week: <b>{stats.get('weekly_uploads', 0)}</b>\n"
+            f"📢 Pings: <b>{stats.get('pings', 0)}</b>\n\n"
+            "🟢 Status: <b>ACTIVE</b>\n"
+            "🔐 Access: <b>ADMIN ONLY</b>"
+        )
+
+        send_message(chat_id, text)
+
+    except Exception as error:
+        print("STATS DISPLAY ERROR:", error)
+
+        send_message(
+            chat_id,
+            "❌ Couldn't load statistics.",
+        )
+
+
+def upload_image(image_bytes, filename):
     response = requests.post(
         "https://api.imgbb.com/1/upload",
         params={
             "key": IMGBB_API_KEY,
         },
         files={
-            "image": (filename, file_bytes),
+            "image": (filename, image_bytes),
         },
         timeout=30,
     )
 
-    if response.status_code != 200:
-        raise Exception(
-            f"ImgBB HTTP {response.status_code}"
-        )
+    response.raise_for_status()
 
     data = response.json()
 
@@ -58,18 +251,41 @@ def process_update(update):
 
     chat_id = message["chat"]["id"]
 
-    # /start
-    text = message.get("text", "")
+    user = message.get("from", {})
+    user_id = user.get("id")
 
-    if text.startswith("/start"):
-        telegram_send_message(
+    if user_id:
+        new_user = record_user(user_id)
+    else:
+        new_user = False
+
+    # /start
+    message_text = message.get("text", "")
+
+    if message_text.startswith("/start"):
+        update_stats(
+            ping=True,
+            new_user=new_user,
+        )
+
+        send_message(
             chat_id,
             "╭────────────────────╮\n"
-            "│   🖼️ IMAGE TO URL   │\n"
+            "│ 🖼️ <b>IMAGE TO URL BOT</b> │\n"
             "╰────────────────────╯\n\n"
-            "Send me an image and I'll convert it into a direct URL.\n\n"
+            "Send me an image and I'll convert it into a public direct URL.\n\n"
+            "🔒 <b>Privacy Notice</b>\n\n"
+            "Please <b>do not send private, personal, confidential, "
+            "or sensitive photos</b>.\n\n"
+            "Uploaded images are sent to a third-party image-hosting "
+            "service to generate the URL.\n\n"
             "⚡ Fast • Simple • Personal",
         )
+        return
+
+    # /botstats
+    if message_text.startswith("/botstats"):
+        bot_stats(chat_id)
         return
 
     # Image
@@ -79,29 +295,23 @@ def process_update(update):
         return
 
     try:
-        # Highest-quality Telegram photo
         photo = photos[-1]
 
         file_id = photo["file_id"]
         unique_id = photo["file_unique_id"]
 
-        # Get Telegram file information
-        file_response = requests.get(
-            f"{TELEGRAM_API}/getFile",
-            params={
+        file_info = telegram(
+            "getFile",
+            {
                 "file_id": file_id,
             },
-            timeout=20,
         )
 
-        file_data = file_response.json()
-
-        if not file_data.get("ok"):
+        if not file_info.get("ok"):
             raise Exception("Telegram getFile failed")
 
-        telegram_path = file_data["result"]["file_path"]
+        telegram_path = file_info["result"]["file_path"]
 
-        # Download image from Telegram
         download_url = (
             f"https://api.telegram.org/file/"
             f"bot{BOT_TOKEN}/{telegram_path}"
@@ -112,13 +322,11 @@ def process_update(update):
             timeout=30,
         )
 
-        if image_response.status_code != 200:
-            raise Exception("Telegram image download failed")
+        image_response.raise_for_status()
 
-        # Upload to ImgBB
         filename = f"telegram-image-{unique_id}.jpg"
 
-        image_data = upload_to_imgbb(
+        image_data = upload_image(
             image_response.content,
             filename,
         )
@@ -128,11 +336,13 @@ def process_update(update):
         width = photo.get("width", "?")
         height = photo.get("height", "?")
 
+        update_stats(upload=True)
+
         result = (
             "╭───────────────╮\n"
-            "│  ✨ IMAGE READY │\n"
+            "│  ✨ <b>IMAGE READY</b> │\n"
             "╰───────────────╯\n\n"
-            "🔗 Direct URL\n\n"
+            "🔗 <b>Direct URL</b>\n\n"
             f"<code>{image_url}</code>\n\n"
             "━━━━━━━━━━━━━━━━\n"
             "🖼️ Format: JPG\n"
@@ -140,18 +350,18 @@ def process_update(update):
             "━━━━━━━━━━━━━━━━"
         )
 
-        telegram_send_message(
+        send_message(
             chat_id,
             result,
         )
 
     except Exception as error:
-        print("ERROR:", error)
+        print("IMAGE ERROR:", error)
 
-        telegram_send_message(
+        send_message(
             chat_id,
-            "❌ Something went wrong.\n\n"
-            "Please send the image again.",
+            "❌ <b>Upload failed.</b>\n\n"
+            "Please try sending the image again.",
         )
 
 
@@ -178,9 +388,7 @@ class handler(BaseHTTPRequestHandler):
                 )
             )
 
-            body = self.rfile.read(
-                content_length
-            )
+            body = self.rfile.read(content_length)
 
             update = json.loads(
                 body.decode("utf-8")
