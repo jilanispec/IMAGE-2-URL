@@ -102,6 +102,14 @@ def send_message(chat_id, text, reply_markup=None):
 
     telegram("sendMessage", data)
 
+def remove_keyboard(chat_id, text):
+    send_message(
+        chat_id,
+        text,
+        {
+            "remove_keyboard": True
+        }
+    )
 
 def answer_callback(callback_id):
     telegram(
@@ -558,7 +566,25 @@ def process_update(update):
         new_user = False
 
     message_text = message.get("text", "")
+    # Exit Super Mode
+    if message_text == "🚪 Exit Super Mode":
+        if user_id:
+            try:
+                set_supermode(user_id, False)
 
+                remove_keyboard(
+                    chat_id,
+                    "╭────────────────────╮\n"
+                    "│   🟢 <b>SUPER MODE OFF</b>   │\n"
+                    "╰────────────────────╯\n\n"
+                    "You're back in normal mode.\n\n"
+                    "Send an image anytime to get its URL."
+                )
+
+            except Exception as error:
+                print("EXIT SUPERMODE ERROR:", error)
+
+        return
     # /start
     if message_text.startswith("/start"):
         update_stats(
