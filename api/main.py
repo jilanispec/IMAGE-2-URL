@@ -39,7 +39,15 @@ def supabase_get(table, params=None):
         params=params or {},
         timeout=20,
     )
+
+    print("SUPABASE GET STATUS:", response.status_code)
+    print("SUPABASE GET RESPONSE:", response.text[:500])
+
     response.raise_for_status()
+
+    if not response.text.strip():
+        return []
+
     return response.json()
 
 
