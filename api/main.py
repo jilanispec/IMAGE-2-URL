@@ -63,9 +63,13 @@ def supabase_insert(table, data, upsert=False):
         json=data,
         timeout=20,
     )
-    response.raise_for_status()
-    return response.json()
 
+    response.raise_for_status()
+
+    if not response.text.strip():
+        return []
+
+    return response.json()
 
 def supabase_update(table, data, params):
     response = requests.patch(
