@@ -75,8 +75,14 @@ def supabase_update(table, data, params):
         json=data,
         timeout=20,
     )
+
     response.raise_for_status()
+
+    if not response.text.strip():
+        return []
+
     return response.json()
+
 
 
 def send_message(chat_id, text, reply_markup=None):
