@@ -341,14 +341,15 @@ def save_image(user_id, name, url):
 
 def supermode_keyboard():
     return {
-        "inline_keyboard": [
+        "keyboard": [
             [
                 {
-                    "text": "🚪 Exit Super Mode",
-                    "callback_data": "exit_supermode",
+                    "text": "🚪 Exit Super Mode"
                 }
             ]
-        ]
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True
     }
 
 
