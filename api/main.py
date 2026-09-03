@@ -926,27 +926,28 @@ if message_text.startswith("/broadcast"):
 
                     failed += 1
 
-        # ===== RESULT =====
+            # ===== RESULT =====
 
-        send_message(
-            chat_id,
+    send_message(
+        chat_id,
 
-            "📢 <b>Broadcast Completed</b>\n\n"
+        "📢 <b>Broadcast Completed</b>\n\n"
 
-            f"👤 Users : {success}\n"
+        f"👤 Users : {success}\n"
 
-            f"👥 Groups : {group_sent}\n"
+        f"👥 Groups : {group_sent}\n"
 
-            f"❌ Failed : {failed}",
-        )
+        f"❌ Failed : {failed}",
+    )
 
-    except Exception as error:
+except Exception as error:
 
-        print(
-            "BROADCAST ERROR:",
-            error,
-        )
+    print(
+        "BROADCAST ERROR:",
+        error,
+    )
 
-        send_message(
-            chat_id,
-            "❌ Broad
+    send_message(
+        chat_id,
+        "❌ <b>Broadcast failed.</b>",
+    )
