@@ -951,3 +951,64 @@ except Exception as error:
         chat_id,
         "❌ <b>Broadcast failed.</b>",
     )
+
+
+class handler(BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8",
+        )
+        self.end_headers()
+
+        self.wfile.write(
+            b"Image URL Bot is online!"
+        )
+
+    def do_POST(self):
+        try:
+            content_length = int(
+                self.headers.get(
+                    "Content-Length",
+                    0,
+                )
+            )
+
+            body = self.rfile.read(content_length)
+
+            update = json.loads(
+                body.decode("utf-8")
+            )
+
+            process_update(update)
+
+            self.send_response(200)
+            self.send_header(
+                "Content-Type",
+                "text/plain",
+            )
+            self.end_headers()
+
+            self.wfile.write(b"OK")
+
+        except Exception as error:
+            print("WEBHOOK ERROR:", error)
+
+            self.send_response(500)
+            self.send_header(
+                "Content-Type",
+                "text/plain",
+            )
+            self.end_headers()
+
+            self.wfile.write(
+                b"Internal Server Error"
+            )
+
+
+
+
+
+
