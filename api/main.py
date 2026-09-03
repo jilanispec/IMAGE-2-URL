@@ -656,15 +656,28 @@ def send_library(
         )
 
 
-# ============================================================
-# BROADCAST
-# ============================================================
+# ========================================================
+# BROADCAST - OWNER ONLY
+# ========================================================
 
-def broadcast(
-    message,
-    chat_id,
-    user_id,
-):
+if message_text.startswith("/broadcast"):
+
+    if str(user_id) != ADMIN_ID:
+
+        send_message(
+            chat_id,
+            "❌ You are not the owner of this bot.",
+        )
+
+        return
+
+    broadcast(
+        message,
+        chat_id,
+        user_id,
+    )
+
+    return
 
     # ===== ADMIN ONLY =====
 
