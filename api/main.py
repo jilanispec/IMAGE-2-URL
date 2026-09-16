@@ -25,7 +25,12 @@ def telegram(method, data=None):
     return response.json()
 
 
-def send_message(chat_id, text, reply_markup=None):
+def send_message(
+    chat_id,
+    text,
+    reply_markup=None,
+    reply_to_message_id=None
+):
     data = {
         "chat_id": chat_id,
         "text": text,
@@ -38,8 +43,15 @@ def send_message(chat_id, text, reply_markup=None):
             reply_markup
         )
 
-    telegram("sendMessage", data)
+    if reply_to_message_id:
+        data["reply_to_message_id"] = (
+            reply_to_message_id
+        )
 
+    telegram(
+        "sendMessage",
+        data
+    )
 
 def remove_keyboard(chat_id, text):
     send_message(
@@ -411,7 +423,7 @@ def bot_stats(chat_id):
 
         text = (
             "╭────────────────────╮\n"
-            "│    🛠️ BOT STATS    │\n"
+            "│    🛠️ BOT STATS       │\n"
             "╰────────────────────╯\n\n"
 
             f"📸 Total Uploads: "
@@ -1011,6 +1023,9 @@ def process_update(update):
     message = update.get(
         "message"
     )
+    message_id = message.get(
+    "message_id"
+    )
 
     if not message:
         return
@@ -1035,6 +1050,24 @@ def process_update(update):
 
     if not chat_id:
         return
+
+    #===== UNKNOWN MESSAGE =====
+
+    if message_text:
+
+        send_message(
+            chat_id,
+
+            "❌ I don't understand that.\n\n"
+            "Please send an image to get its URL.",
+
+            reply_to_message_id=message_id
+        )
+
+        return
+
+
+    
 
     #===== USER RECORDING =====
 
