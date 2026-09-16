@@ -1530,3 +1530,24 @@ class handler(
             self.wfile.write(
                 b"Internal Server Error"
             )
+except Exception as error:
+
+            print(
+                "WEBHOOK ERROR:",
+                error
+            )
+
+            self.send_response(
+                500
+            )
+
+            self.send_header(
+                "Content-Type",
+                "text/plain"
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b"Internal Server Error"
+)
