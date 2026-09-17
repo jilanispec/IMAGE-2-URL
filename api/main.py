@@ -1496,13 +1496,11 @@ def process_update(update):
             chat_id,
 
             "❌ <b>Upload failed.</b>\n\n"
-            "Please try sending the "
-            "image again.",
+            f"<code>{str(error)}</code>",
 
             reply_to_message_id=
                 message_id
-        )
-
+    )
 
 #===== WEBHOOK =====
 
