@@ -1334,19 +1334,6 @@ def process_update(update):
 
     if not photos:
 
-        if message_text:
-
-            send_message(
-                chat_id,
-
-                "❌ I don't understand that.\n\n"
-                "Please send an image to get "
-                "its URL.",
-
-                reply_to_message_id=
-                    message_id
-            )
-
         return
 
     try:
