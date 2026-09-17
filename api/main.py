@@ -691,3 +691,913 @@ def send_library(
         )
 
 
+
+#===== BROADCAST =====
+
+def broadcast(
+    message,
+    chat_id,
+    user_id
+):
+
+    #===== ADMIN ONLY =====
+
+    if str(user_id) != ADMIN_ID:
+
+        send_message(
+            chat_id,
+            "❌ You are not the owner "
+            "of this bot."
+        )
+
+        return
+
+    try:
+
+        users = supabase_get(
+            "bot_users",
+            {
+                "select":
+                    "user_id"
+            }
+        )
+
+        chats = supabase_get(
+            "bot_chats",
+            {
+                "select":
+                    "chat_id,type"
+            }
+        )
+
+        success = 0
+        failed = 0
+        group_sent = 0
+
+        #===== REPLY BROADCAST =====
+
+        if message.get(
+            "reply_to_message"
+        ):
+
+            source = message[
+                "reply_to_message"
+            ]
+
+            source_chat = source[
+                "chat"
+            ][
+                "id"
+            ]
+
+            source_message = source[
+                "message_id"
+            ]
+
+            for user in users:
+
+                try:
+
+                    result = telegram(
+                        "forwardMessage",
+                        {
+                            "chat_id":
+                                user[
+                                    "user_id"
+                                ],
+
+                            "from_chat_id":
+                                source_chat,
+
+                            "message_id":
+                                source_message
+                        }
+                    )
+
+                    if result.get("ok"):
+                        success += 1
+                    else:
+                        failed += 1
+
+                except Exception:
+                    failed += 1
+
+            for chat in chats:
+
+                try:
+
+                    if chat.get(
+                        "type"
+                    ) in [
+                        "group",
+                        "supergroup"
+                    ]:
+
+                        result = telegram(
+                            "forwardMessage",
+                            {
+                                "chat_id":
+                                    chat[
+                                        "chat_id"
+                                    ],
+
+                                "from_chat_id":
+                                    source_chat,
+
+                                "message_id":
+                                    source_message
+                            }
+                        )
+
+                        if result.get("ok"):
+                            group_sent += 1
+                        else:
+                            failed += 1
+
+                except Exception:
+                    failed += 1
+
+        #===== TEXT BROADCAST =====
+
+        else:
+
+            text = message.get(
+                "text",
+                ""
+            )
+
+            broadcast_text = text[
+                len("/broadcast"):
+            ].strip()
+
+            if not broadcast_text:
+
+                send_message(
+                    chat_id,
+
+                    "❌ <b>Broadcast Usage</b>\n\n"
+                    "Send:\n"
+                    "<code>/broadcast Your message</code>\n\n"
+                    "Or reply to any message "
+                    "with <code>/broadcast</code> "
+                    "to forward it."
+                )
+
+                return
+
+            for user in users:
+
+                try:
+
+                    result = telegram(
+                        "sendMessage",
+                        {
+                            "chat_id":
+                                user[
+                                    "user_id"
+                                ],
+
+                            "text":
+                                broadcast_text
+                        }
+                    )
+
+                    if result.get("ok"):
+                        success += 1
+                    else:
+                        failed += 1
+
+                except Exception:
+                    failed += 1
+
+            for chat in chats:
+
+                try:
+
+                    if chat.get(
+                        "type"
+                    ) in [
+                        "group",
+                        "supergroup"
+                    ]:
+
+                        result = telegram(
+                            "sendMessage",
+                            {
+                                "chat_id":
+                                    chat[
+                                        "chat_id"
+                                    ],
+
+                                "text":
+                                    broadcast_text
+                            }
+                        )
+
+                        if result.get("ok"):
+                            group_sent += 1
+                        else:
+                            failed += 1
+
+                except Exception:
+                    failed += 1
+
+        send_message(
+            chat_id,
+
+            "📢 <b>Broadcast Completed</b>\n\n"
+
+            f"👤 Users : {success}\n"
+            f"👥 Groups : {group_sent}\n"
+            f"❌ Failed : {failed}",
+
+            reply_to_message_id=
+                message.get(
+                    "message_id"
+                )
+        )
+
+    except Exception as error:
+
+        print(
+            "BROADCAST ERROR:",
+            error
+        )
+
+        send_message(
+            chat_id,
+            "❌ <b>Broadcast failed.</b>",
+
+            reply_to_message_id=
+                message.get(
+                    "message_id"
+                )
+        )
+
+
+#===== CALLBACKS =====
+
+def process_callback(update):
+
+    callback = update.get(
+        "callback_query"
+    )
+
+    if not callback:
+        return
+
+    callback_id = callback.get(
+        "id"
+    )
+
+    data = callback.get(
+        "data",
+        ""
+    )
+
+    message = callback.get(
+        "message",
+        {}
+    )
+
+    chat = message.get(
+        "chat",
+        {}
+    )
+
+    chat_id = chat.get(
+        "id"
+    )
+
+    user = callback.get(
+        "from",
+        {}
+    )
+
+    user_id = user.get(
+        "id"
+    )
+
+    if callback_id:
+
+        telegram(
+            "answerCallbackQuery",
+            {
+                "callback_query_id":
+                    callback_id
+            }
+        )
+
+    if not chat_id or not user_id:
+        return
+
+    #===== LIBRARY PAGINATION =====
+
+    if data.startswith(
+        "library:"
+    ):
+
+        try:
+
+            page = int(
+                data.split(
+                    ":"
+                )[1]
+            )
+
+        except Exception:
+
+            page = 1
+
+        send_library(
+            chat_id,
+            user_id,
+            page
+        )
+
+
+#===== PROCESS UPDATE =====
+
+def process_update(update):
+
+    #===== CALLBACK =====
+
+    if update.get(
+        "callback_query"
+    ):
+
+        process_callback(
+            update
+        )
+
+        return
+
+    message = update.get(
+        "message"
+    )
+
+    if not message:
+        return
+
+    message_id = message.get(
+        "message_id"
+    )
+
+    chat = message.get(
+        "chat",
+        {}
+    )
+
+    chat_id = chat.get(
+        "id"
+    )
+
+    user = message.get(
+        "from",
+        {}
+    )
+
+    user_id = user.get(
+        "id"
+    )
+
+    if not chat_id:
+        return
+
+    #===== USER RECORDING =====
+
+    new_user = False
+
+    if user_id:
+
+        new_user = record_user(
+            user_id
+        )
+
+    #===== GROUP RECORDING =====
+
+    save_chat(
+        message
+    )
+
+    message_text = message.get(
+        "text",
+        ""
+    )
+
+    #===== EXIT SUPERMODE =====
+
+    if message_text == (
+        "🚪 Exit Super Mode"
+    ):
+
+        if user_id:
+
+            try:
+
+                set_supermode(
+                    user_id,
+                    False
+                )
+
+                telegram(
+                    "sendMessage",
+                    {
+                        "chat_id":
+                            chat_id,
+
+                        "text":
+                            "╭────────────────────╮\n"
+                            "│ 🟢 <b>SUPER MODE OFF</b> │\n"
+                            "╰────────────────────╯\n\n"
+
+                            "You're back in normal mode.\n\n"
+
+                            "Send an image anytime "
+                            "to get its URL.",
+
+                        "parse_mode":
+                            "HTML",
+
+                        "reply_markup":
+                            json.dumps(
+                                {
+                                    "remove_keyboard":
+                                        True
+                                }
+                            ),
+
+                        "reply_to_message_id":
+                            message_id
+                    }
+                )
+
+            except Exception as error:
+
+                print(
+                    "EXIT SUPERMODE ERROR:",
+                    error
+                )
+
+                send_message(
+                    chat_id,
+
+                    "❌ Couldn't disable "
+                    "Super Mode.",
+
+                    reply_to_message_id=
+                        message_id
+                )
+
+        return
+
+    #===== START =====
+
+    if message_text.startswith(
+        "/start"
+    ):
+
+        update_stats(
+            ping=True,
+            new_user=new_user
+        )
+
+        send_message(
+            chat_id,
+
+            "╭────────────────────╮\n"
+            "│ 🖼️ <b>IMAGE TO URL BOT</b> │\n"
+            "╰────────────────────╯\n\n"
+
+            "Send me an image and I'll "
+            "convert it into a public "
+            "direct URL.\n\n"
+
+            "🔒 <b>Privacy Notice</b>\n\n"
+
+            "Please <b>do not send private, "
+            "personal, confidential, or "
+            "sensitive photos</b>.\n\n"
+
+            "Uploaded images are sent to "
+            "a third-party image-hosting "
+            "service to generate the URL.\n\n"
+
+            "⚡ Fast • Simple • Personal",
+
+            reply_to_message_id=
+                message_id
+        )
+
+        return
+
+    #===== BOT STATS =====
+
+    if message_text.startswith(
+        "/botstats"
+    ):
+
+        if str(user_id) != ADMIN_ID:
+
+            send_message(
+                chat_id,
+
+                "⛔ <b>Access Denied</b>\n\n"
+                "This command is available "
+                "to the bot administrator only.",
+
+                reply_to_message_id=
+                    message_id
+            )
+
+            return
+
+        bot_stats(
+            chat_id
+        )
+
+        return
+
+    #===== BROADCAST =====
+
+    if message_text.startswith(
+        "/broadcast"
+    ):
+
+        if str(user_id) != ADMIN_ID:
+
+            send_message(
+                chat_id,
+
+                "❌ You are not the owner "
+                "of this bot.",
+
+                reply_to_message_id=
+                    message_id
+            )
+
+            return
+
+        broadcast(
+            message,
+            chat_id,
+            user_id
+        )
+
+        return
+
+    #===== SUPERMODE =====
+
+    if message_text.startswith(
+        "/supermode"
+    ):
+
+        if not user_id:
+            return
+
+        try:
+
+            set_supermode(
+                user_id,
+                True
+            )
+
+            send_message(
+                chat_id,
+
+                "╭────────────────────╮\n"
+                "│ 🚀 <b>SUPER MODE ON</b> │\n"
+                "╰────────────────────╯\n\n"
+
+                "Your images will now be "
+                "saved to your personal "
+                "library.\n\n"
+
+                "🏷️ <b>How naming works:</b>\n"
+
+                "• Add a caption to the image "
+                "→ caption becomes the name.\n"
+
+                "• No caption → automatically "
+                "named Image 1, Image 2, etc.\n\n"
+
+                "Use /myimages anytime to "
+                "view your library.",
+
+                supermode_keyboard(),
+
+                reply_to_message_id=
+                    message_id
+            )
+
+        except Exception as error:
+
+            print(
+                "SUPERMODE ERROR:",
+                error
+            )
+
+            send_message(
+                chat_id,
+
+                "❌ Couldn't enable "
+                "Super Mode.",
+
+                reply_to_message_id=
+                    message_id
+            )
+
+        return
+
+    #===== MY IMAGES =====
+
+    if message_text.startswith(
+        "/myimages"
+    ):
+
+        if not user_id:
+            return
+
+        send_library(
+            chat_id,
+            user_id,
+            page=1
+        )
+
+        return
+
+    #===== IMAGE =====
+
+    photos = message.get(
+        "photo"
+    )
+
+    if not photos:
+
+        if message_text:
+
+            send_message(
+                chat_id,
+
+                "❌ I don't understand that.\n\n"
+                "Please send an image to get "
+                "its URL.",
+
+                reply_to_message_id=
+                    message_id
+            )
+
+        return
+
+    try:
+
+        photo = photos[-1]
+
+        file_id = photo[
+            "file_id"
+        ]
+
+        unique_id = photo[
+            "file_unique_id"
+        ]
+
+        #===== GET TELEGRAM FILE =====
+
+        file_info = telegram(
+            "getFile",
+            {
+                "file_id":
+                    file_id
+            }
+        )
+
+        if not file_info.get(
+            "ok"
+        ):
+
+            raise Exception(
+                "Telegram getFile failed"
+            )
+
+        telegram_path = file_info[
+            "result"
+        ][
+            "file_path"
+        ]
+
+        download_url = (
+            "https://api.telegram.org/file/"
+            f"bot{BOT_TOKEN}/"
+            f"{telegram_path}"
+        )
+
+        image_response = requests.get(
+            download_url,
+            timeout=30
+        )
+
+        image_response.raise_for_status()
+
+        #===== UPLOAD TO IMGBB =====
+
+        filename = (
+            f"telegram-image-"
+            f"{unique_id}.jpg"
+        )
+
+        image_data = upload_image(
+            image_response.content,
+            filename
+        )
+
+        image_url = image_data[
+            "url"
+        ]
+
+        width = photo.get(
+            "width",
+            "?"
+        )
+
+        height = photo.get(
+            "height",
+            "?"
+        )
+
+        #===== UPDATE STATS =====
+
+        update_stats(
+            upload=True
+        )
+
+        #===== SUPERMODE SAVE =====
+
+        saved_name = None
+
+        if (
+            user_id
+            and get_supermode(
+                user_id
+            )
+        ):
+
+            caption = message.get(
+                "caption",
+                ""
+            ).strip()
+
+            if caption:
+
+                saved_name = caption
+
+            else:
+
+                saved_name = (
+                    "Image "
+                    f"{get_next_image_number(user_id)}"
+                )
+
+            save_image(
+                user_id,
+                saved_name,
+                image_url
+            )
+
+        #===== IMAGE RESULT =====
+
+        result = (
+            "╭───────────────╮\n"
+            "│  ✨ <b>IMAGE READY</b> │\n"
+            "╰───────────────╯\n\n"
+
+            "🔗 <b>Direct URL</b>\n\n"
+
+            f"<code>{image_url}</code>\n\n"
+        )
+
+        if saved_name:
+
+            result += (
+                f"💾 <b>Saved as:</b> "
+                f"{saved_name}\n\n"
+            )
+
+        result += (
+            "━━━━━━━━━━━━━━━━\n"
+            "🖼️ Format: JPG\n"
+            f"📐 Size: "
+            f"{width} × {height}\n"
+            "━━━━━━━━━━━━━━━━"
+        )
+
+        send_message(
+            chat_id,
+            result,
+
+            reply_to_message_id=
+                message_id
+        )
+
+    except Exception as error:
+
+        print(
+            "IMAGE ERROR:",
+            error
+        )
+
+        send_message(
+            chat_id,
+
+            "❌ <b>Upload failed.</b>\n\n"
+            "Please try sending the "
+            "image again.",
+
+            reply_to_message_id=
+                message_id
+        )
+
+
+#===== WEBHOOK =====
+
+class handler(
+    BaseHTTPRequestHandler
+):
+
+    def do_GET(self):
+
+        self.send_response(
+            200
+        )
+
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        )
+
+        self.end_headers()
+
+        self.wfile.write(
+            b"Image URL Bot is online!"
+        )
+
+    def do_POST(self):
+
+        try:
+
+            content_length = int(
+                self.headers.get(
+                    "Content-Length",
+                    0
+                )
+            )
+
+            body = self.rfile.read(
+                content_length
+            )
+
+            update = json.loads(
+                body.decode(
+                    "utf-8"
+                )
+            )
+
+            process_update(
+                update
+            )
+
+            self.send_response(
+                200
+            )
+
+            self.send_header(
+                "Content-Type",
+                "text/plain"
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b"OK"
+            )
+
+        except Exception as error:
+
+            print(
+                "WEBHOOK ERROR:",
+                error
+            )
+
+            self.send_response(
+                500
+            )
+
+            self.send_header(
+                "Content-Type",
+                "text/plain"
+            )
+
+            self.end_headers()
+
+            self.wfile.write(
+                b"Internal Server Error"
+            )
