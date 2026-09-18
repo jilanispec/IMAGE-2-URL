@@ -470,26 +470,32 @@ def upload_image(
     response = requests.post(
         "https://api.imgbb.com/1/upload",
         params={
-            "key":
-                IMGBB_API_KEY
+            "key": IMGBB_API_KEY
         },
         files={
-            "image":
-                (
-                    filename,
-                    image_bytes
-                )
+            "image": (
+                filename,
+                image_bytes,
+                "image/jpeg"
+            )
         },
-        timeout=30
+        timeout=60
     )
 
-    response.raise_for_status()
+    if not response.ok:
+        try:
+            error_data = response.json()
+            raise Exception(
+                f"ImgBB: {error_data}"
+            )
+        except ValueError:
+            response.raise_for_status()
 
     data = response.json()
 
     if not data.get("success"):
         raise Exception(
-            "ImgBB upload failed"
+            f"ImgBB upload failed: {data}"
         )
 
     return data["data"]
