@@ -230,7 +230,45 @@ def save_chat(message):
             error
         )
 
+                                                          
+#===== PING =====
 
+@router.message(
+    Command("ping")
+)
+async def ping_command(
+    message: Message
+):
+
+    save_chat(
+        message
+    )
+
+
+    start = time.perf_counter()
+
+
+    sent = await message.reply(
+        "🏓 Pinging..."
+    )
+
+
+    latency = (
+        time.perf_counter()
+        - start
+    ) * 1000
+
+
+    await sent.edit_text(
+
+        f"🏓 <b>Pong!</b>\n\n"
+
+        "🟢 Status: Online\n"
+
+        f"⚡ Latency: "
+        f"<code>{latency:.2f} ms</code>"
+    )
+    
 #===== SUPERMODE =====
 
 def get_supermode(user_id):
