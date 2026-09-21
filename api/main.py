@@ -22,7 +22,21 @@ def telegram(method, data=None):
         data=data or {},
         timeout=30
     )
-    return response.json()
+
+    result = response.json()
+
+    print(
+        "TELEGRAM:",
+        method,
+        result
+    )
+
+    if not result.get("ok"):
+        raise Exception(
+            f"Telegram API error: {result}"
+        )
+
+    return result
 
 
 def send_message(
@@ -48,21 +62,20 @@ def send_message(
             reply_to_message_id
         )
 
-    telegram(
+    return telegram(
         "sendMessage",
         data
     )
 
 
 def remove_keyboard(chat_id, text):
-    send_message(
+    return send_message(
         chat_id,
         text,
         {
             "remove_keyboard": True
         }
     )
-
 
 #===== SUPABASE =====
 
