@@ -214,6 +214,7 @@ def save_chat(message):
 
         chat_id = chat.get("id")
         chat_type = chat.get("type")
+        
 
         if not chat_id:
             return
@@ -1107,6 +1108,24 @@ def process_update(update):
     chat_id = chat.get(
         "id"
     )
+    chat = message.get(
+        "chat",
+        {}
+    )
+
+    chat_id = chat.get(
+        "id"
+    )
+
+    chat_type = chat.get(
+        "type",
+        ""
+    )
+
+    is_group = chat_type in [
+        "group",
+        "supergroup"
+    ]
 
     user = message.get(
         "from",
@@ -1204,6 +1223,29 @@ def process_update(update):
                     reply_to_message_id=
                         message_id
                 )
+
+        return
+
+    #===== PING =====
+
+    if message_text.startswith(
+        "/ping"
+    ):
+
+        update_stats(
+            ping=True
+        )
+
+        send_message(
+            chat_id,
+
+            "🏓 <b>Pong!</b>\n\n"
+            "🟢 Status: <b>Online</b>\n"
+            "⚡ Bot is responding normally.",
+
+            reply_to_message_id=
+                message_id
+        )
 
         return
 
@@ -1370,6 +1412,18 @@ def process_update(update):
     if message_text.startswith(
         "/myimages"
     ):
+
+        if is_group:
+
+            send_message(
+                chat_id,
+                "🚫 <b>My Images is available "
+                "in private chat only.</b>",
+                reply_to_message_id=
+                message_id
+            )
+
+            return
 
         if not user_id:
             return
