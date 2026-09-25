@@ -586,10 +586,13 @@ def library_keyboard(
     }
 
 
+
+
 def send_library(
     chat_id,
     user_id,
-    page=1
+    page=1,
+    message_id=None
 ):
     try:
 
@@ -611,9 +614,7 @@ def send_library(
 
         if total == 0:
 
-            send_message(
-                chat_id,
-
+            text = (
                 "╭────────────────────╮\n"
                 "│   🖼️ <b>MY IMAGES</b>   │\n"
                 "╰────────────────────╯\n\n"
@@ -623,6 +624,22 @@ def send_library(
                 "Use /supermode and send "
                 "an image to save it."
             )
+
+            if message_id:
+                telegram(
+                    "editMessageText",
+                    {
+                        "chat_id": chat_id,
+                        "message_id": message_id,
+                        "text": text,
+                        "parse_mode": "HTML"
+                    }
+                )
+            else:
+                send_message(
+                    chat_id,
+                    text
+                )
 
             return
 
@@ -687,14 +704,34 @@ def send_library(
             ]
         )
 
-        send_message(
-            chat_id,
-            "\n".join(lines),
-            library_keyboard(
-                page,
-                total_pages
-            )
+        text = "\n".join(lines)
+
+        keyboard = library_keyboard(
+            page,
+            total_pages
         )
+
+        if message_id:
+
+            telegram(
+                "editMessageText",
+                {
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "reply_markup":
+                        json.dumps(keyboard)
+                }
+            )
+
+        else:
+
+            send_message(
+                chat_id,
+                text,
+                keyboard
+            )
 
     except Exception as error:
 
@@ -708,7 +745,6 @@ def send_library(
             "❌ Couldn't load your "
             "image library."
         )
-
 
 
 #===== BROADCAST =====
@@ -1031,7 +1067,8 @@ def process_callback(update):
         send_library(
             chat_id,
             user_id,
-            page
+            page,
+            message.get("message_id")
         )
 
 
