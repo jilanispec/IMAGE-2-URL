@@ -477,17 +477,11 @@ def bot_stats(chat_id):
 
 #===== IMAGE UPLOAD =====
 
-def upload_image(
-    image_bytes,
-    filename
-):
+def upload_image(image_bytes, filename):
     response = requests.post(
-        "https://api.imgbb.com/1/upload",
-        params={
-            "key": IMGBB_API_KEY
-        },
+        "https://imgdb.io/api/v1/upload?ttl=0",
         files={
-            "image": (
+            "file": (
                 filename,
                 image_bytes,
                 "image/jpeg"
@@ -499,20 +493,18 @@ def upload_image(
     if not response.ok:
         try:
             error_data = response.json()
-            raise Exception(
-                f"ImgBB: {error_data}"
-            )
+            raise Exception(f"ImgDB: {error_data}")
         except ValueError:
             response.raise_for_status()
 
     data = response.json()
 
-    if not data.get("success"):
-        raise Exception(
-            f"ImgBB upload failed: {data}"
-        )
+    if not data.get("url"):
+        raise Exception(f"ImgDB upload failed: {data}")
 
-    return data["data"]
+    return {
+        "url": data["url"]
+    }
 
 
 #===== SAVED IMAGES =====
